@@ -9,6 +9,7 @@ import time
 import typing as tp
 import warnings
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -74,6 +75,33 @@ def test_as_completed(executor) -> None:
         finished_jobs.append(j)
     assert [fast, fast, slow] == [j.result() for j in finished_jobs], "fast jobs first"
     assert jobs[0] is finished_jobs[-1]
+
+
+def test_as_completed_bounds_poll_sleep_by_timeout(monkeypatch) -> None:
+    now = 0.0
+
+    def sleep(seconds: float) -> None:
+        nonlocal now
+        now += seconds
+
+    monkeypatch.setattr(time, "time", lambda: now)
+    monkeypatch.setattr(time, "monotonic", lambda: now)
+    monkeypatch.setattr(time, "sleep", sleep)
+    pending = Mock()
+    pending.done.return_value = False
+    with pytest.raises(TimeoutError):
+        list(helpers.as_completed([pending], timeout=1, poll_frequency=10))
+    assert now == 1
+
+
+def test_as_completed_zero_timeout_yields_ready_jobs() -> None:
+    ready, pending = Mock(), Mock()
+    ready.done.return_value = True
+    pending.done.return_value = False
+    completed = helpers.as_completed([pending, ready], timeout=0)
+    assert next(completed) is ready
+    with pytest.raises(TimeoutError):
+        next(completed)
 
 
 @requires_rsync

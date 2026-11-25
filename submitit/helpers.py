@@ -142,11 +142,9 @@ def as_completed(
     Job
         The next completed job
     """
-    start = time.time()
+    deadline = None if timeout is None else time.monotonic() + timeout
     jobs_done: set[int] = set()
     while True:
-        if timeout is not None and time.time() - start > timeout:
-            raise TimeoutError
         for i, job in enumerate(jobs):
             if i in jobs_done:
                 continue
@@ -155,7 +153,13 @@ def as_completed(
                 yield job
         if len(jobs_done) == len(jobs):
             break
-        time.sleep(poll_frequency)
+        delay = poll_frequency
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError
+            delay = min(delay, remaining)
+        time.sleep(delay)
 
 
 def run_cmd(str_args, **kwargs):
